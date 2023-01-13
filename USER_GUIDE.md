@@ -1,6 +1,8 @@
 - [User Guide](#user-guide)
-    - [Example](#example)
-    - [How to use IAMs as authentication method](#how-to-use-iams-as-authentication-method)
+	- [Example](#example)
+	- [How to use IAMs as authentication method](#how-to-use-iams-as-authentication-method)
+			- [AWS SDK V1](#aws-sdk-v1)
+			- [AWS SDK V2](#aws-sdk-v2)
 
 # User Guide
 

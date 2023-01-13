@@ -276,9 +276,9 @@ func ParseVersion(version string) (int64, int64, int64, error) {
 func (c *Client) Perform(req *http.Request) (*http.Response, error) {
 	if !c.useResponseCheckOnly {
 		// Launch product check, request info, check header then payload.
-		if err := c.doProductCheck(c.productCheck); err != nil {
-			return nil, err
-		}
+		// if err := c.doProductCheck(c.productCheck); err != nil {
+		// 	return nil, err
+		// }
 	}
 
 	// Retrieve the original request.
