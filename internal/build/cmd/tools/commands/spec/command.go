@@ -42,7 +42,6 @@ import (
 
 	"github.com/opensearch-project/opensearch-go/v2/internal/build/cmd"
 	"github.com/opensearch-project/opensearch-go/v2/internal/build/utils"
-	"github.com/opensearch-project/opensearch-go/v2/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -90,71 +89,38 @@ type Command struct {
 // download-spec retrieve the list of active artifacts
 // downloads, extract and write to disk the rest-resources spec alongside a json with relevant build information.
 func (c Command) Execute() (err error) {
-	artifactsUrl := os.Getenv("OPENSEARCH_ARTIFACTS_URL")
+	const artifactsUrl = "https://github.com/opensearch-project/opensearch-api-specification/blob/main/OpenSearch.openapi.json"
 
-	buildVersion := os.Getenv("OPENSEARCH_BUILD_VERSION")
-	if buildVersion == "" {
-		buildVersion = version.Client
-	}
-
-	versionUrl := strings.Join([]string{artifactsUrl, buildVersion}, "/")
-
-	res, err := http.Get(versionUrl)
+	res, err := http.Get(artifactsUrl)
 	if err != nil {
 		log.Fatalf(err.Error())
 	}
 	defer res.Body.Close()
 
-	var v Versions
-	dec := json.NewDecoder(res.Body)
-	err = dec.Decode(&v)
+	log.Printf("Json is : %s", res.Body)
+	// Create the file
+	out, err := os.Create("opensearch-api-specification.json")
 	if err != nil {
-		log.Fatalf(err.Error())
+		return err
 	}
+	defer out.Close()
 
-	if c.Debug {
-		log.Printf("%d builds found", len(v.Version.Builds))
-	}
-
-	var build Build
-	if c.CommitHash != "" {
-		if build, err = findBuildByCommitHash(c.CommitHash, v.Version.Builds); err != nil {
-			build = findMostRecentBuild(v.Version.Builds)
-		}
-	} else {
-		build = findMostRecentBuild(v.Version.Builds)
-	}
-	if c.Debug {
-		log.Printf("Build found : %s", build.Projects.OpenSearch.CommitHash)
-	}
-
-	data, err := c.downloadZip(build)
-	if err != nil {
-		log.Fatalf("Cannot download zip from %s, reason : %s", build.zipfileUrl(), err)
-	}
-
-	if err := c.extractZipToDest(data); err != nil {
-		log.Fatalf(err.Error())
-	}
-
-	d, _ := json.Marshal(build)
-
+	d, _ := json.Marshal(res.Body)
+	// Write the body to file
 	err = c.writeFileToDest("opensearch.json", d)
 	if err != nil {
-		log.Fatalf(err.Error())
+		return err
 	}
-
 	return nil
 }
 
 func (c Command) writeFileToDest(filename string, data []byte) error {
+	log.Printf("Writing file to : %s", filename)
 	path := filepath.Join(c.Output, filename)
 	if err := ioutil.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("cannot write file: %s", err)
 	}
-	if c.Debug {
-		log.Printf("Successfuly written file to : %s", path)
-	}
+	log.Printf("Successfuly written file to : %s", path)
 	return nil
 }
 

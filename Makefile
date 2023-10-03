@@ -232,3 +232,105 @@ help:  ## Display help
 .DEFAULT_GOAL := help
 .PHONY: help backport cluster cluster.clean coverage  godoc lint release test test-bench test-integ test-unit linters linters.install
 .SILENT: lint.markdown
+
+##@ Generator
+gen-api:  ## Generate the API package from the JSON specification
+	$(eval input  ?= tmp/rest-api-spec)
+	$(eval output ?= opensearchapi)
+ifdef debug
+	$(eval args += --debug)
+endif
+ifdef OPENSEARCH_BUILD_VERSION
+	$(eval version = $(OPENSEARCH_BUILD_VERSION))
+else
+	$(eval version = $(OPENSEARCH_DEFAULT_BUILD_VERSION))
+endif
+ifdef OPENSEARCH_BUILD_HASH
+	$(eval build_hash = $(OPENSEARCH_BUILD_HASH))
+else
+	$(eval build_hash = $(shell cat tmp/opensearch.json | jq ".projects.opensearch.commit_hash"))
+endif
+	@printf "\033[2m→ Generating API package from specification ($(version):$(build_hash))...\033[0m\n"
+	@{ \
+		set -e; \
+		trap "test -d .git && git checkout --quiet $(PWD)/internal/build/go.mod" INT TERM EXIT; \
+		export OPENSEARCH_BUILD_VERSION=$(version) && \
+		export OPENSEARCH_BUILD_HASH=$(build_hash) && \
+		cd internal/build && \
+		go run main.go apisource --input '$(PWD)/$(input)/api/*.json' --output '$(PWD)/$(output)' $(args) && \
+		go run main.go apistruct --output '$(PWD)/$(output)'; \
+	}
+
+gen-tests:  ## Generate the API tests from the YAML specification
+	$(eval input  ?= tmp/rest-api-spec)
+	$(eval output ?= opensearchapi/test)
+ifdef debug
+	$(eval args += --debug)
+endif
+ifdef OPENSEARCH_BUILD_VERSION
+	$(eval version = $(OPENSEARCH_BUILD_VERSION))
+else
+	$(eval version = $(OPENSEARCH_DEFAULT_BUILD_VERSION))
+endif
+ifdef OPENSEARCH_BUILD_HASH
+	$(eval build_hash = $(OPENSEARCH_BUILD_HASH))
+else
+	$(eval build_hash = $(shell cat tmp/opensearch.json | jq ".projects.opensearch.commit_hash"))
+endif
+	@printf "\033[2m→ Generating API tests from specification ($(version):$(build_hash))...\033[0m\n"
+	@{ \
+		set -e; \
+		trap "test -d .git && git checkout --quiet $(PWD)/internal/cmd/generate/go.mod" INT TERM EXIT; \
+		export OPENSEARCH_BUILD_VERSION=$(version) && \
+		export OPENSEARCH_BUILD_HASH=$(build_hash) && \
+		rm -rf $(output)/*_test.go && \
+		rm -rf $(output)/xpack && \
+		cd internal/build && \
+		go get golang.org/x/tools/cmd/goimports && \
+		go generate ./... && \
+		go run main.go apitests --input '$(PWD)/$(input)/test/free/**/*.y*ml' --output '$(PWD)/$(output)' $(args) && \
+		go run main.go apitests --input '$(PWD)/$(input)/test/platinum/**/*.yml' --output '$(PWD)/$(output)/xpack' $(args) && \
+		mkdir -p '$(PWD)/opensearchapi/test/xpack/ml' && \
+		mkdir -p '$(PWD)/opensearchapi/test/xpack/ml-crud' && \
+		mv $(PWD)/opensearchapi/test/xpack/xpack_ml* $(PWD)/opensearchapi/test/xpack/ml/ && \
+		mv $(PWD)/opensearchapi/test/xpack/ml/xpack_ml__jobs_crud_test.go $(PWD)/opensearchapi/test/xpack/ml-crud/; \
+	}
+
+gen-docs:  ## Generate the skeleton of documentation examples
+	$(eval input  ?= tmp/alternatives_report.json)
+	$(eval update ?= no)
+	@{ \
+		set -e; \
+		trap "test -d .git && git checkout --quiet $(PWD)/internal/cmd/generate/go.mod" INT TERM EXIT; \
+		if [[ $(update) == 'yes' ]]; then \
+			printf "\033[2m→ Updating the alternatives_report.json file\033[0m\n" && \
+			curl -s https://raw.githubusercontent.com/elastic/built-docs/master/raw/en/elasticsearch/reference/master/alternatives_report.json > tmp/alternatives_report.json; \
+		fi; \
+		printf "\033[2m→ Generating Go source files from Console input in [$(input)]\033[0m\n" && \
+		( cd '$(PWD)/internal/cmd/generate' && \
+			go run main.go examples src --debug --input='$(PWD)/$(input)' --output='$(PWD)/.doc/examples/' \
+		) && \
+		( cd '$(PWD)/.doc/examples/src' && \
+			if which gotestsum > /dev/null 2>&1 ; then \
+				gotestsum --format=short-verbose; \
+			else \
+				go test -v $(testunitargs); \
+			fi; \
+		) && \
+		printf "\n\033[2m→ Generating ASCIIDoc files from Go source\033[0m\n" && \
+		( cd '$(PWD)/internal/build' && \
+			go run main.go examples doc --debug --input='$(PWD)/.doc/examples/src/' --output='$(PWD)/.doc/examples/' \
+		) \
+	}
+
+download-specs: ## Download the latest specs for the specified Elasticsearch version
+	$(eval output ?= tmp)
+	@mkdir -p tmp
+	@{ \
+		set -e; \
+		printf "\n\033[2m→ Downloading latest OpenSearch specs for version [$()]\033[0m\n" && \
+		rm -rf $(output)/rest-api-spec && \
+		rm -rf $(output)/elasticsearch.json && \
+		cd internal/build && \
+		go run main.go download-spec --output '$(PWD)/$(output)'; \
+	}
